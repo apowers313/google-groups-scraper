@@ -1,0 +1,15 @@
+{
+  "name": "google-groups-scraper",
+  "version": "0.0.1",
+  "description": "A tool for scraping the data out of Google Groups (since no export functionality exists)",
+  "main": "ggs.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Adam Powers",
+  "license": "MIT",
+  "dependencies": {
+    "inquirer": "^0.12.0",
+    "selenium-webdriver": "^2.53.1"
+  }
+}
