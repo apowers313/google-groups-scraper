@@ -5,7 +5,13 @@ var webdriver = require("selenium-webdriver");
 var inquirer = require("inquirer");
 var async = require("async");
 
-var driver = new webdriver.Builder().forBrowser("chrome").build();
+var driver;
+var debug = true;
+if (debug) {
+	driver = new webdriver.Builder().forBrowser("chrome").build();
+} else {
+	driver = new webdriver.Builder().forBrowser("phantomjs").build();
+}
 var By = webdriver.By;
 var until = webdriver.until;
 driver.manage().timeouts().implicitlyWait(10000);
@@ -29,12 +35,12 @@ driver.findElement(By.name('Passwd')).submit();
 // Wait for title "My Account"
 driver.wait(until.titleIs('My Account'), 10000);
 
-indexGroup();
+scrapeMessageList(function() {});
 
 // after authenticating 
 function indexGroup() {
 	var i;
-	
+
 	// TODO: async series
 	for (i = 0; i < googleGroups.length; i++) {
 		driver.get(googleGroups[i]);
@@ -77,13 +83,14 @@ function scrapeGroup(answer) {
 					console.log("Group contains " + elems.length + " threads.");
 					// get the href=
 					async.mapSeries(elems, getHrefFromElem, function(err, res) {
-						console.log ("mapSeries res:", res);
-						console.log ("hrefList:", hrefList);
+						console.log("mapSeries res:", res);
+						console.log("hrefList:", hrefList);
 						cb();
 					});
 				},
 				function(err) {
 					console.log(err);
+					cb(err);
 				});
 	}
 
@@ -92,9 +99,10 @@ function scrapeGroup(answer) {
 			.then(function(href) {
 				console.log(href);
 				hrefList.push(href);
-				cb (null, href);
+				cb(null, href);
 			}, function(err) {
 				console.log(err);
+				cb(err);
 			});
 	}
 
@@ -106,11 +114,75 @@ function scrapeGroup(answer) {
 
 			// wait for load
 
-			// click on message
+			// find all messages
 
-			// scrape relevant information	
+			// click on each message
+
+			// scrape relevant information
+
+			// save to JSON
 		}
-
-
 	}
+}
+
+function scrapeMessageList(cb) {
+	var url = "https://groups.google.com/a/fidoalliance.org/forum/#!topic/ap-tech/eFAd8VtMMjw"; // TODO: remove
+
+	driver.get(url);
+
+	// <div tabindex="0" class="IVILX2C-tb-W IVILX2C-sb-n IVILX2C-sb-k IVILX2C-tb-Y IVILX2C-b-Db IVILX2C-tb-X">
+	driver.findElements(By.xpath("//div[@class='IVILX2C-tb-W']")).then(
+		function(elems) {
+			async.mapSeries(elems, scrapeMessage, function(err, res) {
+				if (err) {
+					console.log(err);
+					cb(err);
+				}
+
+				console.log ("Names:", res);
+				cb(null, res);
+			});
+		},
+		function(err) {
+			console.log(err);
+			cb(err);
+		});
+}
+
+function scrapeMessage(elem, cb) {
+	// click on the message to expand it and load the message
+	elem.click();
+
+	// Get sender
+	// <span class="IVILX2C-D-a" style="color: rgb(34, 34, 34);">Michelle Ball</span>
+	driver.findElement(By.xpath("//span[@class='IVILX2C-D-a']")).getText().then(
+		function(name) {
+			console.log ("Name:", name);
+			cb (null, name);
+		}, function (err) {
+			console.log (err);
+		});
+
+
+	// Get date
+	// <span class="IVILX2C-tb-Q IVILX2C-b-Cb" title="Monday, March 28, 2016 at 5:46:20 AM UTC-7">Mar 28</span>
+
+	// Get (optional) other recipients
+	// <div style=""> <span class="IVILX2C-tb-r"> Other recipients: </span> <span class="IVILX2C-tb-q"> <span>joe@company.org</span> </span> </div>
+
+	// Get message
+	// < div tabindex = "0"
+	// class = "IVILX2C-tb-P" > < input type = "text"
+	// tabindex = "-1"
+	// role = "presentation"
+	// style = "opacity: 0; height: 1px; width: 1px; z-index: -1; overflow: hidden; position: absolute;" > < div > < div style = "overflow: auto" > < div style = "max-height: 10000px" >
+	// 	< div lang = "EN-US"
+	// link = "blue"
+	// vlink = "purple" >
+	// 	< div >
+	// 	< p class = "MsoNormal" > < span style = "font-size:11.0pt;font-family:&quot;Calibri&quot;,&quot;sans-serif&quot;;color:#1f497d" > Hi Adam, < /span></p >
+
+	// Get (optional) attachments
+	// <div class="IVILX2C-tb-o"><div> <span class="IVILX2C-sb-S">Attachments</span> 
+	// ...
 }
