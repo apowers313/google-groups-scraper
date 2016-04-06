@@ -15,7 +15,9 @@ if (debug) {
 }
 var By = webdriver.By;
 var until = webdriver.until;
-driver.manage().timeouts().implicitlyWait(10000);
+var Key = webdriver.Key;
+var ActionSequence = webdriver.ActionSequence;
+driver.manage().timeouts().implicitlyWait(3000);
 
 // authenticate with Google Accounts
 driver.get("http://accounts.google.com");
@@ -38,6 +40,9 @@ driver.wait(until.titleIs('My Account'), 10000);
 
 indexGroup();
 
+// scrapeMessageList("https://groups.google.com/a/fidoalliance.org/forum/#!topic/fido-bod/NrEkqMN40MU", function() {});
+// scrapeMessageList("https://groups.google.com/a/fidoalliance.org/forum/#!topic/ap-tech/eFAd8VtMMjw", function() {});
+
 // after authenticating 
 function indexGroup() {
 	var i;
@@ -47,29 +52,55 @@ function indexGroup() {
 		driver.get(googleGroups[i]);
 		// driver.wait(until.titleIs('Google Groups'), 30000);
 
-		// TODO: might be able to replace this manual work with the following gist (or something like it):
-		// lastHeight = driver.execute_script("return document.body.scrollHeight")
-		// while True:
-		//     driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-		//     time.sleep(pause)
-		//     newHeight = driver.execute_script("return document.body.scrollHeight")
-		//     if newHeight == lastHeight:
-		//         break
-		//     lastHeight = newHeight
-
 		// load topics
-		inquirer.prompt({
-			type: "confirm",
-			name: "throwaway",
-			message: "Please scroll to the bottom of the Google Group. Are you done?",
-			default: false
-		}, scrapeGroup);
+		async.doUntil(scrollDown, atBottom, function(err, ret) {
+			if (err) {
+				console.log(err);
+			} else {
+				console.log("done scrolling");
+			}
+		});
+
+		scrapeGroup();
 	}
 	// 	driver.quit();
 }
 
+var oldHeight = 0, height = 0;
+function scrollDown(cb) {
+	console.log("Scrolling down...");
+	driver.isElementPresent(By.xpath("//div[@class='IVILX2C-b-G']"), 10000);
+	console.log("Page loaded...");
+	// IVILX2C-p-M
+	// driver.findElement(By.xpath("//tbody[@class='IVILX2C-p-w']")).sendKeys(Key.PAGE_DOWN).then(function() {
+
+	new ActionSequence(driver).sendKeys([Key.PAGE_DOWN, Key.PAGE_DOWN, Key.PAGE_DOWN, Key.PAGE_DOWN]).perform().then(function() {
+		console.log("sent key");
+		driver.sleep(2000);
+		driver.executeScript("return document.getElementsByClassName(\"IVILX2C-b-G\")[0].offsetHeight;").then(function(h) {
+			height = h;
+			cb(null, "blah");
+		}, function(err) {
+			console.log(err);
+			cb(err);
+		});
+	}, function(err) {
+		console.log(err);
+		cb(err);
+	});
+}
+
+function atBottom(cb) {
+	console.log("Old height:", oldHeight);
+	console.log("New height:", height);
+	var done = (oldHeight === height);
+	oldHeight = height;
+
+	return done;
+}
+
 // after we get all the URLs for the group, scrape all the messages
-function scrapeGroup(answer) {
+function scrapeGroup() {
 	// scrape topic URLs
 	var i, p, hrefList = [];
 	async.series([
@@ -113,28 +144,33 @@ function scrapeGroup(answer) {
 				console.log(err);
 				cb(err);
 			}
-			fs.writeFileSync("test.json", res);
+			fs.writeFileSync("test.json", JSON.stringify(res));
 			cb(null, res);
-		})
+		});
 	}
 }
 
 function scrapeMessageList(url, cb) {
-	console.log ("OPENING THREAD:", url);
+	console.log("OPENING THREAD:", url);
 	driver.get(url);
 
 	// Get list of messages
 	// <div tabindex="0" class="IVILX2C-tb-W IVILX2C-sb-n IVILX2C-sb-k IVILX2C-tb-Y IVILX2C-b-Db IVILX2C-tb-X">
-	driver.findElements(By.xpath("//div[@class='IVILX2C-tb-W']")).then(
+	// driver.findElements(By.xpath("//div[@class='IVILX2C-tb-W']")).then(
+	driver.findElements(By.xpath("//div[@class='IVILX2C-tb-F IVILX2C-tb-v']")).then(
 		function(elems) {
-			async.mapSeries(elems, scrapeMessage, function(err, res) {
-				if (err) {
-					console.log(err);
-					cb(err);
-				}
-				console.log("Names:", res);
-				cb(null, res);
-			});
+			console.log("Thread has " + elems.length + " messages.");
+			if (elems.length > 1) {
+				async.mapSeries(elems, scrapeMessages, function(err, res) {
+					if (err) {
+						console.log(err);
+						cb(err);
+					}
+					cb(null, res);
+				});
+			} else if (elems.length == 1) { // don't click if there's only one element
+				scrapeMessage(elems[0], cb);
+			}
 		},
 		function(err) {
 			console.log(err);
@@ -142,17 +178,22 @@ function scrapeMessageList(url, cb) {
 		});
 }
 
+function scrapeMessages(elem, doneCb) {
+	elem.click();
+	scrapeMessage(elem, doneCb);
+}
+
 function scrapeMessage(elem, doneCb) {
 	// click on the message to expand it and load the message
-	elem.click();
 	driver.isElementPresent(By.xpath(".//div[@class='IVILX2C-tb-eb IVILX2C-tb-kb']"), 10000);
+
 	var ret = {};
 
 	async.parallel([
 		getSender,
 		getDate,
 		getRecipients,
-		getMessage,
+		// getMessage,
 		getAttachments
 	], function(err, res) {
 		doneCb(err, ret);
@@ -247,6 +288,7 @@ function scrapeMessage(elem, doneCb) {
 						cb(err);
 					}
 					console.log("Attachments :", res);
+					ret.attachments = res;
 					cb(null, res);
 				});
 			},
